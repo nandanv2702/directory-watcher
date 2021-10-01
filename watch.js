@@ -6,7 +6,6 @@ const Path = require('path');
 const axios = require('axios').default;
 const decode = require('jwt-decode');
 const credentials = require('./credentials');
-// const checkToken = require('./token');
 
 const dirPath = process.env.DIRPATH
 const API_URL = process.env.API_URL
@@ -75,13 +74,15 @@ const initializeWatcher = () => {
 
             // send data from files to API
             // axios
-            //     .post('http://localhost:3001/api/v1/aos-entries', { data: fileContents, auth: { ...credentials } })
+            //     .post('http://localhost:3001/api/v1/aos-entries', { data: fileContents })
             //     .then(res => {
             //         log(res)
             //     })
             //     .catch(err => {
             //         log(err.message)
             //     })
+
+            // fs.unlink(filePath)
 
         }) //Adding call for fileChange here and path will be passed in
         .on('change', path => log(`File ${path} has been changed`))
@@ -109,4 +110,7 @@ const readFile = async function (filePath) {
 }
 
 getToken()
-    .then(initializeWatcher)
+    .then(() => {
+        axios.defaults.headers.common['X-ACCESS-TOKEN'] = authToken
+        initializeWatcher()
+    })
