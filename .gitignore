@@ -1,3 +1,4 @@
 .env
 credentials.js
 node_modules/
+rootCACert.pem

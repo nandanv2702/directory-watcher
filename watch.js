@@ -3,15 +3,22 @@ const chokidar = require('chokidar');
 const fs = require('fs');
 const fastCSV = require('fast-csv');
 const Path = require('path');
+const https = require('https');
 const axios = require('axios').default;
 const decode = require('jwt-decode');
 const credentials = require('./credentials');
+const path = require('path');
 
 const dirPath = process.env.DIRPATH
 const API_URL = process.env.API_URL
 // const dirPath = "C:\Users\venkatn1\Desktop\Test AOS Files"
 
 const log = console.log.bind(console);
+
+const CACert = fs.readFileSync('./rootCACert.pem')
+
+const httpsAgent = new https.Agent({ ca: CACert });
+axios.defaults.httpsAgent = httpsAgent
 
 // Log the start
 log('The application has started');
@@ -73,14 +80,14 @@ const initializeWatcher = () => {
             const fileContents = await readFile(filePath)
 
             // send data from files to API
-            // axios
-            //     .post('http://localhost:3001/api/v1/aos-entries', { data: fileContents })
-            //     .then(res => {
-            //         log(res)
-            //     })
-            //     .catch(err => {
-            //         log(err.message)
-            //     })
+            axios
+                .post('http://localhost:3001/api/v1/aos-entries', { data: fileContents })
+                .then(res => {
+                    log(res.status)
+                })
+                .catch(err => {
+                    log(err)
+                })
 
             // fs.unlink(filePath)
 
