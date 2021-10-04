@@ -81,7 +81,7 @@ const initializeWatcher = () => {
 
             // send data from files to API
             axios
-                .post('http://localhost:3001/api/v1/aos-entries', { data: fileContents })
+                .post(API_URL + '/aos-entries', { data: fileContents })
                 .then(res => {
                     log(res.status)
                 })
