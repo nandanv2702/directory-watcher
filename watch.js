@@ -171,17 +171,18 @@ function getRecentBikes(fileContents) {
     // Add event listeners.
     watcher
         .on('add', async (path) => {
-            const fileContents = JSON.parse(fs.readFile(path));
+            console.log(path);
+            const fileContents = JSON.parse(await fs.promises.readFile(path));
 
             const recentBikes = getRecentBikes(fileContents);
 
             // POST recentBikes to API
             axios.post(API_URL + '/sap-entries', { data: recentBikes })
             .then((res) => {
-                log(res.status)
+                log(res.data)
             })
             .catch((err) => {
-                console.error(err.message);
+                console.error(err);
             })
         })
         .on('change', path => log(`File ${path} has been changed`))
@@ -219,5 +220,5 @@ const readCSV = async function (filePath) {
 getToken()
     .then(() => {
         axios.defaults.headers.common['X-ACCESS-TOKEN'] = authToken
-        initializeAOSWatcher()
+        initializeSAPWatcher()
     })
