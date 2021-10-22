@@ -9,11 +9,11 @@ const decode = require('jwt-decode');
 const credentials = require('./credentials');
 const path = require('path');
 
-// const AOS_DIR_PATH = process.env.AOS_DIR_PATH
+const AOS_DIR_PATH = process.env.AOS_DIR_PATH
 const SAP_DIR_PATH = process.env.SAP_DIR_PATH
 // const API_URL = process.env.API_URL
 const API_URL = 'https://localhost:3001/api/v1'
-const AOS_DIR_PATH = "C:\Users\venkatn1\Desktop\Test AOS Files"
+// const AOS_DIR_PATH = "C:\Users\venkatn1\Desktop\Test AOS Files"
 
 const watcherOptions = {
     //'W:\.'
@@ -72,7 +72,7 @@ async function getToken() {
         axios.post(API_URL + '/login', credentials)
             .then(res => {
                 authToken = res.data.accessToken
-                log(res)
+                // log(res)
                 decodeToken(authToken)
                 resolve()
             })
@@ -92,6 +92,7 @@ async function getToken() {
  * PREP API.
  */
 const initializeAOSWatcher = () => {
+    console.log(AOS_DIR_PATH);
     // Initialize watcher.
     const watcher = chokidar.watch(AOS_DIR_PATH, watcherOptions);
 
@@ -107,7 +108,12 @@ const initializeAOSWatcher = () => {
                 .post(API_URL + '/aos-entries', { data: fileContents })
                 .then(res => {
                     log(res.status)
-                    // fs.unlink(filePath)
+                    fs.unlink(filePath, (err, filePath) => {
+                        if (err) {
+                            console.error(err);
+                        }
+                        console.log(`${filePath} was deleted`);
+                    })
                 })
                 .catch(err => {
                     console.error(err)
@@ -220,5 +226,6 @@ const readCSV = async function (filePath) {
 getToken()
     .then(() => {
         axios.defaults.headers.common['X-ACCESS-TOKEN'] = authToken
-        initializeSAPWatcher()
+        // initializeSAPWatcher()
+        initializeAOSWatcher()
     })
