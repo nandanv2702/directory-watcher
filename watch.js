@@ -9,9 +9,22 @@ const decode = require('jwt-decode');
 const credentials = require('./credentials');
 const path = require('path');
 
-const dirPath = process.env.DIRPATH
-const API_URL = process.env.API_URL
-// const dirPath = "C:\Users\venkatn1\Desktop\Test AOS Files"
+// const AOS_DIR_PATH = process.env.AOS_DIR_PATH
+const SAP_DIR_PATH = process.env.SAP_DIR_PATH
+// const API_URL = process.env.API_URL
+const API_URL = 'https://localhost:3001/api/v1'
+const AOS_DIR_PATH = "C:\Users\venkatn1\Desktop\Test AOS Files"
+
+const watcherOptions = {
+    //'W:\.'
+    usePolling: true,
+    //ignored: /(^|[\/\\])\../, // ignore dotfiles
+    persistent: true,
+    awaitWriteFinish: {
+        pollInterval: 100,
+        stabilityThreshold: 1000,
+    }
+}
 
 const log = console.log.bind(console);
 
@@ -75,27 +88,17 @@ async function getToken() {
 
 /**
  * Initializes Chokidar and watches the 'add', 'change', and 'unlink' events. When a file is added,
- * the {@link readFile} function is called asynchronously. Once received, it sends the data to the aos-entries route of the 
+ * the {@link readCSV} function is called asynchronously. Once received, it POSTs data to the aos-entries route of the 
  * PREP API.
  */
-const initializeWatcher = () => {
+const initializeAOSWatcher = () => {
     // Initialize watcher.
-    const watcher = chokidar.watch(dirPath, {
-        //'W:\.'
-        usePolling: true,
-        //ignored: /(^|[\/\\])\../, // ignore dotfiles
-        persistent: true,
-        awaitWriteFinish: {
-            pollInterval: 100,
-            stabilityThreshold: 1000,
-        }
-    });
-
+    const watcher = chokidar.watch(AOS_DIR_PATH, watcherOptions);
 
     // Add event listeners.
     watcher
         .on('add', async (filePath) => {
-            const fileContents = await readFile(filePath)
+            const fileContents = await readCSV(filePath)
 
             // send data from files to API
             // TOOD: add retries on 5xx errors and recall getToken on 4xx errors
@@ -107,7 +110,7 @@ const initializeWatcher = () => {
                     // fs.unlink(filePath)
                 })
                 .catch(err => {
-                    log(err)
+                    console.error(err)
                 })
 
 
@@ -118,12 +121,80 @@ const initializeWatcher = () => {
 }
 
 /**
+ * Returns bikes that have been most recently operated on at every station
+ * @param {JSON} fileContents - a parsed .json file
+ * @returns Array<Object>
+ */
+function getRecentBikes(fileContents) {
+    const rows = fileContents.Rowsets.Rowset.Row;
+
+    // extract all with LAST_OPERATION !== '---'
+    const hasLastOperation = rows.filter((row) => row.LAST_OPERATION !== '---');
+
+    const sortByOperation = {};
+
+    // group by station (LAST_OPERATION)
+    hasLastOperation.forEach((operation) => {
+        const lastOperation = operation.LAST_OPERATION;
+        if (!Object.keys(sortByOperation).includes(lastOperation)) {
+            sortByOperation[lastOperation] = [operation];
+        } else {
+            sortByOperation[lastOperation].push(operation);
+        }
+    });
+
+    const recentBikes = [];
+
+    // filter for subassemblies
+    // sort by most recent (SEQ_DATE)
+    Object.keys(sortByOperation).forEach((operation) => {
+        const recentBike = sortByOperation[operation]
+            .filter((e) => e.SFC.split('_').length > 1)
+            .sort((a, b) => new Date(b.LAST_OPERATION_DATE_TIME) - new Date(a.LAST_OPERATION_DATE_TIME))[0];
+
+        if (recentBike) {
+            recentBikes.push(recentBike);
+        }
+    });
+    return recentBikes;
+}
+
+/**
+ * Initializes Chokidar and watches the 'add', 'change', and 'unlink' events. When a file is added,
+ * the {@link getRecentBikes} function is called asynchronously. Once received, it POSTs data to the XXXX route of the 
+ * PREP API.
+ */
+ const initializeSAPWatcher = () => {
+    const watcher = chokidar.watch(SAP_DIR_PATH, watcherOptions);
+
+
+    // Add event listeners.
+    watcher
+        .on('add', async (path) => {
+            const fileContents = JSON.parse(fs.readFile(path));
+
+            const recentBikes = getRecentBikes(fileContents);
+
+            // POST recentBikes to API
+            axios.post(API_URL + '/sap-entries', { data: recentBikes })
+            .then((res) => {
+                log(res.status)
+            })
+            .catch((err) => {
+                console.error(err.message);
+            })
+        })
+        .on('change', path => log(`File ${path} has been changed`))
+        .on('unlink', path => log(`File ${path} has been removed`));
+}
+
+/**
  * Reads a file with the provided file path `filePath`
  * @async
  * @param {String} filePath 
  * @returns Promise
  */
-const readFile = async function (filePath) {
+const readCSV = async function (filePath) {
     const fileContents = []
 
     const headers = ["commodityCode", "makeOrBuy", "partNumber", "issuingSLoc", "receivingSLoc", "huNumber", "plantCode", "currBike", "highBike", "rackNumber", "productionDate"]
@@ -148,5 +219,5 @@ const readFile = async function (filePath) {
 getToken()
     .then(() => {
         axios.defaults.headers.common['X-ACCESS-TOKEN'] = authToken
-        initializeWatcher()
+        initializeAOSWatcher()
     })
