@@ -11,9 +11,9 @@ const path = require('path');
 
 const AOS_DIR_PATH = process.env.AOS_DIR_PATH
 const SAP_DIR_PATH = process.env.SAP_DIR_PATH
-    // const API_URL = process.env.API_URL
+// const API_URL = process.env.API_URL
 const API_URL = 'https://localhost:3001/api/v1'
-    // const AOS_DIR_PATH = "C:\Users\venkatn1\Desktop\Test AOS Files"
+// const AOS_DIR_PATH = "C:\Users\venkatn1\Desktop\Test AOS Files"
 
 const watcherOptions = {
     //'W:\.'
@@ -72,14 +72,14 @@ async function getToken() {
         axios.post(API_URL + '/login', credentials)
             .then(res => {
                 authToken = res.data.accessToken
-                    // log(res)
+                // log(res)
                 decodeToken(authToken)
                 resolve()
             })
             .catch(err => {
                 console.error(err.message)
-                    // TODO: retry on error
-                    // TODO: alert on 5xx error
+                // TODO: retry on error
+                // TODO: alert on 5xx error
                 reject()
             })
     })
@@ -98,7 +98,7 @@ const initializeAOSWatcher = () => {
 
     // Add event listeners.
     watcher
-        .on('add', async(filePath) => {
+        .on('add', async (filePath) => {
             const fileContents = await readCSV(filePath)
 
             // send data from files to API
@@ -165,6 +165,12 @@ function getRecentBikes(fileContents) {
     return recentBikes;
 }
 
+function getHighBikes(fileContents) {
+    const rows = fileContents.Rowsets.Rowset.Row;
+    
+    const sortByDate = {};
+}
+
 /**
  * Initializes Chokidar and watches the 'add', 'change', and 'unlink' events. When a file is added,
  * the {@link getRecentBikes} function is called asynchronously. Once received, it POSTs data to the XXXX route of the 
@@ -176,11 +182,13 @@ const initializeSAPWatcher = () => {
 
     // Add event listeners.
     watcher
-        .on('add', async(path) => {
+        .on('add', async (path) => {
             console.log(path);
             const fileContents = JSON.parse(await fs.promises.readFile(path));
 
             const recentBikes = getRecentBikes(fileContents);
+
+            const highBikes = getHighBikes(fileContents);
 
             const timeDifference = Date.now() - fs.stats.mtimeMs(path);
 
@@ -188,7 +196,7 @@ const initializeSAPWatcher = () => {
             sendData(recentBikes, timeDifference);
 
         })
-        .on('change', path => {
+        .on('change', async (path) => {
             log(`File ${path} has been changed`)
             const fileContents = JSON.parse(await fs.promises.readFile(path));
 
@@ -205,7 +213,7 @@ const initializeSAPWatcher = () => {
  * @param {String} filePath 
  * @returns Promise
  */
-const readCSV = async function(filePath) {
+const readCSV = async function (filePath) {
     const fileContents = []
 
     const headers = ["commodityCode", "makeOrBuy", "partNumber", "issuingSLoc", "receivingSLoc", "huNumber", "plantCode", "currBike", "highBike", "rackNumber", "productionDate"]
@@ -230,7 +238,7 @@ const readCSV = async function(filePath) {
 getToken()
     .then(() => {
         axios.defaults.headers.common['X-ACCESS-TOKEN'] = authToken
-            // initializeSAPWatcher()
+        // initializeSAPWatcher()
         initializeAOSWatcher()
     })
 
