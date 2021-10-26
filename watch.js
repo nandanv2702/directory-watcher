@@ -22,7 +22,7 @@ const watcherOptions = {
     persistent: true,
     awaitWriteFinish: {
         pollInterval: 100,
-        stabilityThreshold: 1000,
+        stabilityThreshold: 300,
     }
 }
 
@@ -99,6 +99,7 @@ const initializeAOSWatcher = () => {
     // Add event listeners.
     watcher
         .on('add', async (filePath) => {
+            log(`${filePath} was added`);
             const fileContents = await readCSV(filePath)
 
             // send data from files to API
@@ -168,7 +169,21 @@ function getRecentBikes(fileContents) {
 function getHighBikes(fileContents) {
     const rows = fileContents.Rowsets.Rowset.Row;
     
+    // highest bike number by date
     const sortByDate = {};
+
+    rows.forEach((row) => {
+        const date = row.SEQ_DATE.split('T')[0]
+        if (!(Object.keys(sortByDate).includes(date))) {
+            sortByDate[date] = [row.SEQ_NUM]
+        } else {
+            sortByDate[date].push(row.SEQ_NUM)
+        }
+    })
+
+    Object.keys(sortByDate).forEach((date) => {
+        sortByDate[date] = sortByDate[date].sort((a,b) => b - a)[0]
+    })
 }
 
 /**
