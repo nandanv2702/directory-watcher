@@ -184,6 +184,8 @@ function getHighBikes(fileContents) {
     Object.keys(sortByDate).forEach((date) => {
         sortByDate[date] = sortByDate[date].sort((a,b) => b - a)[0]
     })
+
+    return sortByDate
 }
 
 /**
@@ -207,8 +209,12 @@ const initializeSAPWatcher = () => {
 
             const timeDifference = Date.now() - fs.stats.mtimeMs(path);
 
+            if (timeDifference > 120000) {
             // POST recentBikes to API
-            sendData(recentBikes, timeDifference);
+            sendData(recentBikes, highBikes, timeDifference);
+            } else {
+                sendData(recentBikes, highBikes);
+            }
 
         })
         .on('change', async (path) => {
@@ -217,7 +223,9 @@ const initializeSAPWatcher = () => {
 
             const recentBikes = getRecentBikes(fileContents);
 
-            sendData(recentBikes)
+            const highBikes = getHighBikes(fileContents);
+
+            sendData(recentBikes, highBikes);
         })
         .on('unlink', path => log(`File ${path} has been removed`));
 }
@@ -257,8 +265,8 @@ getToken()
         initializeAOSWatcher()
     })
 
-function sendData(recentBikes, timeDifference = undefined) {
-    axios.post(API_URL + '/sap-entries', { data: recentBikes, timeDifference })
+function sendData(recentBikes, highBikes, timeDifference = undefined) {
+    axios.post(API_URL + '/sap-entries', { data: { recentBikes, highBikes } , timeDifference })
         .then((res) => {
             log(res.data);
         })
