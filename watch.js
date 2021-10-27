@@ -207,14 +207,23 @@ const initializeSAPWatcher = () => {
 
             const highBikes = getHighBikes(fileContents);
 
-            const timeDifference = Date.now() - fs.stats.mtimeMs(path);
+            let timeDifference = 0
 
-            if (timeDifference > 120000) {
-            // POST recentBikes to API
-            sendData(recentBikes, highBikes, timeDifference);
-            } else {
-                sendData(recentBikes, highBikes);
-            }
+            fs.stat(path, (err, stats) => {
+                if (err) {
+                    console.log(err.message);
+                } else {
+                    timeDifference = Date.now() - stats.mtimeMs
+                    console.log(`timediff is ${timeDifference}`)
+
+                    if (timeDifference > 120000) {
+                    // POST recentBikes to API
+                    sendData(recentBikes, highBikes, timeDifference);
+                    } else {
+                        sendData(recentBikes, highBikes);
+                    }
+                }
+            })
 
         })
         .on('change', async (path) => {
@@ -261,8 +270,8 @@ const readCSV = async function (filePath) {
 getToken()
     .then(() => {
         axios.defaults.headers.common['X-ACCESS-TOKEN'] = authToken
-        // initializeSAPWatcher()
-        initializeAOSWatcher()
+        initializeSAPWatcher()
+        // initializeAOSWatcher()
     })
 
 function sendData(recentBikes, highBikes, timeDifference = undefined) {
