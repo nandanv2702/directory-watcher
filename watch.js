@@ -201,6 +201,7 @@ const initializeSAPWatcher = () => {
     watcher
         .on('add', async (path) => {
             console.log(path);
+            const lineName = path.slice(-10).split('.')[0]
             const fileContents = JSON.parse(await fs.promises.readFile(path));
 
             const recentBikes = getRecentBikes(fileContents);
@@ -218,9 +219,9 @@ const initializeSAPWatcher = () => {
 
                     if (timeDifference > 120000) {
                     // POST recentBikes to API
-                    sendData(recentBikes, highBikes, timeDifference);
+                    sendData(recentBikes, highBikes, lineName, timeDifference);
                     } else {
-                        sendData(recentBikes, highBikes);
+                        sendData(recentBikes, highBikes, lineName);
                     }
                 }
             })
@@ -228,13 +229,16 @@ const initializeSAPWatcher = () => {
         })
         .on('change', async (path) => {
             log(`File ${path} has been changed`)
+
+            const lineName = path.slice(-10).split('.')[0]
+
             const fileContents = JSON.parse(await fs.promises.readFile(path));
 
             const recentBikes = getRecentBikes(fileContents);
 
             const highBikes = getHighBikes(fileContents);
 
-            sendData(recentBikes, highBikes);
+            sendData(recentBikes, highBikes, lineName);
         })
         .on('unlink', path => log(`File ${path} has been removed`));
 }
@@ -270,12 +274,12 @@ const readCSV = async function (filePath) {
 getToken()
     .then(() => {
         axios.defaults.headers.common['X-ACCESS-TOKEN'] = authToken
-        initializeSAPWatcher()
-        // initializeAOSWatcher()
+        // initializeSAPWatcher()
+        initializeAOSWatcher()
     })
 
-function sendData(recentBikes, highBikes, timeDifference = undefined) {
-    axios.post(API_URL + '/sap-entries', { data: { recentBikes, highBikes } , timeDifference })
+function sendData(recentBikes, highBikes, lineName, timeDifference = undefined) {
+    axios.post(API_URL + '/sap-entries', { data: { recentBikes, highBikes, lineName } , timeDifference })
         .then((res) => {
             log(res.data);
         })
