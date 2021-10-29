@@ -22,7 +22,7 @@ const watcherOptions = {
     persistent: true,
     awaitWriteFinish: {
         pollInterval: 100,
-        stabilityThreshold: 1000,
+        stabilityThreshold: 400,
     }
 }
 
@@ -193,7 +193,10 @@ function getHighBikes(fileContents) {
  * PREP API.
  */
 const initializeSAPWatcher = () => {
-    const watcher = chokidar.watch(SAP_DIR_PATH, watcherOptions);
+    const watcher = chokidar.watch(SAP_DIR_PATH, { ...watcherOptions, awaitWriteFinish: {
+        pollInterval: 300,
+        stabilityThreshold: 5000
+    }});
 
 
     // Add event listeners.
