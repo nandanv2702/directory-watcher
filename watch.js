@@ -22,7 +22,7 @@ const watcherOptions = {
     persistent: true,
     awaitWriteFinish: {
         pollInterval: 100,
-        stabilityThreshold: 300,
+        stabilityThreshold: 1000,
     }
 }
 
@@ -106,14 +106,13 @@ const initializeAOSWatcher = () => {
             // TOOD: add retries on 5xx errors and recall getToken on 4xx errors
             // TODO: error handling if fileContents are unable to be
             axios
-                .post(API_URL + '/aos-entries', { data: fileContents })
+                .post(API_URL + '/aos-entries', { data: await fileContents })
                 .then(res => {
                     log(res.status)
-                    fs.unlink(filePath, (err, filePath) => {
+                    fs.unlink(filePath, (err) => {
                         if (err) {
                             console.error(err);
                         }
-                        console.log(`${filePath} was deleted`);
                     })
                 })
                 .catch(err => {
@@ -200,9 +199,13 @@ const initializeSAPWatcher = () => {
     // Add event listeners.
     watcher
         .on('add', async (path) => {
-            console.log(path);
+            if (path.slice(-4).toLowerCase() === 'json') {
+                console.log(path);
             const lineName = path.slice(-10).split('.')[0]
-            const fileContents = JSON.parse(await fs.promises.readFile(path));
+            const rawFile = await fs.promises.readFile(path)
+            console.log(rawFile)
+            console.log(typeof rawFile)
+            const fileContents = JSON.parse(rawFile);
 
             const recentBikes = getRecentBikes(fileContents);
 
@@ -226,19 +229,25 @@ const initializeSAPWatcher = () => {
                 }
             })
 
+            }
+            
         })
         .on('change', async (path) => {
-            log(`File ${path} has been changed`)
+            if (path.slice(-4).toLowerCase() === 'json') {
+                log(`File ${path} has been changed`)
 
-            const lineName = path.slice(-10).split('.')[0]
+                const lineName = path.slice(-10).split('.')[0]
+    
+                const rawFile = await fs.promises.readFile(path)
+                const fileContents = JSON.parse(rawFile);
+    
+                const recentBikes = getRecentBikes(fileContents);
+    
+                const highBikes = getHighBikes(fileContents);
+    
+                sendData(recentBikes, highBikes, lineName);
+            }
 
-            const fileContents = JSON.parse(await fs.promises.readFile(path));
-
-            const recentBikes = getRecentBikes(fileContents);
-
-            const highBikes = getHighBikes(fileContents);
-
-            sendData(recentBikes, highBikes, lineName);
         })
         .on('unlink', path => log(`File ${path} has been removed`));
 }
@@ -274,7 +283,7 @@ const readCSV = async function (filePath) {
 getToken()
     .then(() => {
         axios.defaults.headers.common['X-ACCESS-TOKEN'] = authToken
-        // initializeSAPWatcher()
+        initializeSAPWatcher()
         initializeAOSWatcher()
     })
 
