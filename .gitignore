@@ -2,3 +2,5 @@
 credentials.js
 node_modules/
 rootCACert.pem
+HDCert.pem
+ca-bundle.cer

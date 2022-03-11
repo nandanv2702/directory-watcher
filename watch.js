@@ -1,18 +1,23 @@
-require('dotenv').config()
-const chokidar = require('chokidar');
-const fs = require('fs');
-const fastCSV = require('fast-csv');
-const Path = require('path');
-const https = require('https');
-const axios = require('axios').default;
-const decode = require('jwt-decode');
-const credentials = require('./credentials');
-const path = require('path');
+import { config } from 'dotenv'
+config()
+import { watch } from 'chokidar';
+import { readFileSync, unlink, promises, stat, createReadStream } from 'fs';
+import { parse } from 'fast-csv';
+import Path from 'path';
+import { Agent } from 'https';
+import axios from 'axios';
+import decode from 'jwt-decode';
+import credentials from './credentials.js';
+import path from 'path';
+import retry from 'async-retry';
+
+const RETRIES = 5; // for all file read events
+const WAIT_DURATION = 1000; // how many ms to wait before reading again
 
 const AOS_DIR_PATH = process.env.AOS_DIR_PATH
 const SAP_DIR_PATH = process.env.SAP_DIR_PATH
-// const API_URL = process.env.API_URL
-const API_URL = 'https://localhost:3001/api/v1'
+const API_URL = process.env.API_URL
+// const API_URL = 'https://localhost:3001/api/v1'
 // const AOS_DIR_PATH = "C:\Users\venkatn1\Desktop\Test AOS Files"
 
 const watcherOptions = {
@@ -22,15 +27,15 @@ const watcherOptions = {
     persistent: true,
     awaitWriteFinish: {
         pollInterval: 100,
-        stabilityThreshold: 400,
+        stabilityThreshold: 300,
     }
 }
 
 const log = console.log.bind(console);
 
-const CACert = fs.readFileSync('./rootCACert.pem')
+const CACert = readFileSync('./ca-bundle.cer')
 
-const httpsAgent = new https.Agent({ ca: CACert });
+const httpsAgent = new Agent({ ca: CACert });
 axios.defaults.httpsAgent = httpsAgent
 
 log('The application has started');
@@ -94,31 +99,36 @@ async function getToken() {
 const initializeAOSWatcher = () => {
     console.log(AOS_DIR_PATH);
     // Initialize watcher.
-    const watcher = chokidar.watch(AOS_DIR_PATH, watcherOptions);
+    const watcher = watch(AOS_DIR_PATH, watcherOptions);
 
     // Add event listeners.
     watcher
         .on('add', async (filePath) => {
             log(`${filePath} was added`);
-            const fileContents = await readCSV(filePath)
+            try {
+                const fileContents = await readCSV(filePath)
 
-            // send data from files to API
-            // TOOD: add retries on 5xx errors and recall getToken on 4xx errors
-            // TODO: error handling if fileContents are unable to be
-            axios
-                .post(API_URL + '/aos-entries', { data: await fileContents })
-                .then(res => {
-                    log(res.status)
-                    fs.unlink(filePath, (err) => {
-                        if (err) {
-                            console.error(err);
-                        }
+
+                // send data from files to APIf
+                // TOOD: add retries on 5xx errors and recall getToken on 4xx errors
+                // TODO: error handling if fileContents are unable to be
+                axios
+                    .post(API_URL + '/aos-entries', { data: await fileContents })
+                    .then(res => {
+                        log(res.status)
+                        unlink(filePath, (err) => {
+                            if (err) {
+                                console.error(err);
+                            }
+                        })
                     })
-                })
-                .catch(err => {
-                    console.error(err)
-                })
-
+                    .catch(err => {
+                        console.error(err.message)
+                    })
+            } catch (err) {
+                console.error(`Error reading ${filePath}. Retried ${RETRIES} times.`)
+                console.error(err);
+            }
 
         }) //Adding call for fileChange here and path will be passed in
         .on('change', path => log(`File ${path} has been changed`))
@@ -167,7 +177,7 @@ function getRecentBikes(fileContents) {
 
 function getHighBikes(fileContents) {
     const rows = fileContents.Rowsets.Rowset.Row;
-    
+
     // highest bike number by date
     const sortByDate = {};
 
@@ -181,7 +191,7 @@ function getHighBikes(fileContents) {
     })
 
     Object.keys(sortByDate).forEach((date) => {
-        sortByDate[date] = sortByDate[date].sort((a,b) => b - a)[0]
+        sortByDate[date] = sortByDate[date].sort((a, b) => b - a)[0]
     })
 
     return sortByDate
@@ -193,10 +203,12 @@ function getHighBikes(fileContents) {
  * PREP API.
  */
 const initializeSAPWatcher = () => {
-    const watcher = chokidar.watch(SAP_DIR_PATH, { ...watcherOptions, awaitWriteFinish: {
-        pollInterval: 300,
-        stabilityThreshold: 5000
-    }});
+    const watcher = watch(SAP_DIR_PATH, {
+        ...watcherOptions, awaitWriteFinish: {
+            pollInterval: 100,
+            stabilityThreshold: 3500
+        }
+    });
 
 
     // Add event listeners.
@@ -204,50 +216,53 @@ const initializeSAPWatcher = () => {
         .on('add', async (path) => {
             if (path.slice(-4).toLowerCase() === 'json') {
                 console.log(path);
-            const lineName = path.slice(-10).split('.')[0]
-            const rawFile = await fs.promises.readFile(path)
-            console.log(rawFile)
-            console.log(typeof rawFile)
-            const fileContents = JSON.parse(rawFile);
+                const lineName = path.slice(-10).split('.')[0]
 
-            const recentBikes = getRecentBikes(fileContents);
+                // TODO: Wrap in while counter for retries during error
+                const rawFile = await promises.readFile(path)
+                console.log(rawFile)
+                console.log(typeof rawFile)
+                const fileContents = JSON.parse(rawFile);
 
-            const highBikes = getHighBikes(fileContents);
+                const recentBikes = getRecentBikes(fileContents);
 
-            let timeDifference = 0
+                const highBikes = getHighBikes(fileContents);
 
-            fs.stat(path, (err, stats) => {
-                if (err) {
-                    console.log(err.message);
-                } else {
-                    timeDifference = Date.now() - stats.mtimeMs
-                    console.log(`timediff is ${timeDifference}`)
+                let timeDifference = 0
 
-                    if (timeDifference > 120000) {
-                    // POST recentBikes to API
-                    sendData(recentBikes, highBikes, lineName, timeDifference);
+                stat(path, (err, stats) => {
+                    if (err) {
+                        console.log(err.message);
                     } else {
-                        sendData(recentBikes, highBikes, lineName);
+                        timeDifference = Date.now() - stats.mtimeMs
+                        console.log(`timediff is ${timeDifference}`)
+
+                        if (timeDifference > 120000) {
+                            // POST recentBikes to API
+                            sendData(recentBikes, highBikes, lineName, timeDifference);
+                        } else {
+                            sendData(recentBikes, highBikes, lineName);
+                        }
                     }
-                }
-            })
+                })
 
             }
-            
+
         })
         .on('change', async (path) => {
             if (path.slice(-4).toLowerCase() === 'json') {
                 log(`File ${path} has been changed`)
 
                 const lineName = path.slice(-10).split('.')[0]
-    
-                const rawFile = await fs.promises.readFile(path)
+
+                // TODO: Wrap in while counter for retries during error
+                const rawFile = await promises.readFile(path)
                 const fileContents = JSON.parse(rawFile);
-    
+
                 const recentBikes = getRecentBikes(fileContents);
-    
+
                 const highBikes = getHighBikes(fileContents);
-    
+
                 sendData(recentBikes, highBikes, lineName);
             }
 
@@ -261,22 +276,33 @@ const initializeSAPWatcher = () => {
  * @param {String} filePath 
  * @returns Promise
  */
-const readCSV = async function (filePath) {
+const readCSV = async function (filePath, currentRetries = 0) {
     const fileContents = []
 
     const headers = ["commodityCode", "makeOrBuy", "partNumber", "issuingSLoc", "receivingSLoc", "huNumber", "plantCode", "currBike", "highBike", "rackNumber", "productionDate"]
 
     return new Promise((resolve, reject) => {
-        fs.createReadStream(filePath)
-            .pipe(fastCSV.parse({ headers }))
-            .on('error', error => console.error(error))
+        createReadStream(filePath)
+            .on('error', err => {
+                // handles EBUSY / ENOENT errors by retrying after WAIT_DURATION for RETRIES times
+                setTimeout(() => {
+                    if (currentRetries !== RETRIES) {
+                        currentRetries += 1
+                        console.log(`retrying ${currentRetries}`);
+                        readCSV(filePath, currentRetries)
+                    } else {
+                        reject(err)
+                    }
+                }, WAIT_DURATION)
+            })
+            .pipe(parse({ headers }))
             .on('data', row => {
                 fileContents.push(row)
             })
             .on('end', (rowCount) => {
                 console.log(`Parsed ${rowCount} rows in ${filePath} \n`)
                 resolve(fileContents)
-            });
+            })
     })
 }
 
@@ -286,12 +312,12 @@ const readCSV = async function (filePath) {
 getToken()
     .then(() => {
         axios.defaults.headers.common['X-ACCESS-TOKEN'] = authToken
-        initializeSAPWatcher()
         initializeAOSWatcher()
+        // initializeSAPWatcher()
     })
 
-function sendData(recentBikes, highBikes, lineName, timeDifference = undefined) {
-    axios.post(API_URL + '/sap-entries', { data: { recentBikes, highBikes, lineName } , timeDifference })
+async function sendData(recentBikes, highBikes, lineName, timeDifference = undefined) {
+    axios.post(API_URL + '/sap-entries', { data: { recentBikes, highBikes, lineName }, timeDifference })
         .then((res) => {
             log(res.data);
         })
